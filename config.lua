@@ -1,4 +1,4 @@
--- Wed Jun 18 22:32:51 UTC 2025
+-- Wed Jun 18 23:41:11 UTC 2025
 --
 -- Unofficial Arturia Minilab3 configuration for Logic Pro.
 --
@@ -11,7 +11,7 @@
 --
 
 arturia = {
-    CONFIG_VERSION = 7,
+    CONFIG_VERSION = 8,
 
     MIDI_PORT_IN = 'MIDI',
     MIDI_PORT_OUT = 'MIDI',
@@ -412,14 +412,12 @@ function CSFeedback(controlID, currentValue, minValue, maxValue, nSubSequentCont
         if not oldValue or oldValue ~= arturia.state.stopped then
             -- flip stopped flag for on/off
             message = arturia.pad.sysex_message(arturia.pad.STOP, not arturia.state.stopped)
-            --displayMessage = arturia.display.sysex_message(10)
         end
     elseif controlID == kControlIDPlay then
         oldValue = arturia.state.playing
         arturia.state.playing = (currentValue == 1)
         if not oldValue or oldValue ~= arturia.state.playing then
             message = arturia.pad.sysex_message(arturia.pad.PLAY, arturia.state.playing)
-            --displayMessage = arturia.display.sysex_message(10)
         end
     elseif controlID == kControlIDArm then
         message = arturia.pad.sysex_message(arturia.pad.REC, currentValue == 1)
@@ -428,6 +426,7 @@ function CSFeedback(controlID, currentValue, minValue, maxValue, nSubSequentCont
     local midi_message = arturia.midi_message(message)
     -- what does 'ret' mean?
     -- but apparently Track Info and Instr start providing proper values (instead of single letter or -1 pText)
+    -- when ret is provided
     midi_message.ret = 16
     return midi_message
 end
@@ -447,7 +446,6 @@ function CSFeedbackText(controlID, pText, textLength, something)
             arturia.state.prev_beat_value = beat
             arturia.state.prev_beat_state = not arturia.state.prev_beat_state
             message = arturia.pad.sysex_message(arturia.pad.PLAY, arturia.state.prev_beat_state)
-            --message2 = arturia.pad.sysex_message(arturia.pad.TAP, arturia.state.prev_beat_state)
         end
         arturia.state.prev_beat_value = beat
     elseif controlID == kControlIDRecord then
@@ -455,7 +453,6 @@ function CSFeedbackText(controlID, pText, textLength, something)
         arturia.state.recording = (pText == 'On')
         if not oldValue or oldValue ~= arturia.state.recording then
             message = arturia.pad.sysex_message(arturia.pad.REC, arturia.state.recording)
-            --message2 = arturia.display.sysex_message(10)
         end
     elseif controlID == kControlIDTrackInfo then
         arturia.display.trackInfo = pText
@@ -624,7 +621,6 @@ function arturia.table.concat(...)
 end
 
 function arturia.table.midi_equals(arr1, arr2)
-
     if type(arr1) ~= "table" or type(arr2) ~= "table" then
         return false
     end
