@@ -1,4 +1,4 @@
--- Fri Jun 20 19:27:51 UTC 2025
+-- Fri Jun 20 22:54:14 UTC 2025
 --
 -- Unofficial Arturia Minilab3 configuration for Logic Pro.
 --
@@ -11,7 +11,7 @@
 --
 
 arturia = {
-    CONFIG_VERSION = 8,
+    CONFIG_VERSION = 11,
 
     MIDI_PORT_IN = 'MIDI',
     MIDI_PORT_OUT = 'MIDI',
@@ -159,11 +159,9 @@ arturia.state = {
     -- for display
     midiInEventType = nil,
 
-    -- for pads
-    prevBarValue = nil,
-    prevBarState = false,
-    prevBeatValue = nil,
-    prevBeatState = false
+    -- for pads, keeping the last beat value, so message is sent only when beat has changed
+    -- also used for bar calculations
+    prevBeatValue = -1,
 }
 
 TABLE_EMPTY = {}
@@ -403,29 +401,42 @@ function CSFeedback(controlID, currentValue, minValue, maxValue, nSubSequentCont
     -- assuming it is required to refresh screen after encoders/faders event
     settriggertimer(1000)
 
-    local message = {}
+    local messages = {}
     local oldValue = nil
 
     if controlID == kControlIDLoop then
-        message = arturia.pad.sysex_message(arturia.pad.LOOP, currentValue == 1)
+        local message = arturia.pad.sysex_message(arturia.pad.LOOP, currentValue == 1)
+        table.insert(messages, message)
     elseif controlID == kControlIDStop then
         oldValue = arturia.state.stopped
         arturia.state.stopped = (currentValue == 1)
+        local message = nil
         if not oldValue or oldValue ~= arturia.state.stopped then
             -- flip stopped flag for on/off
             message = arturia.pad.sysex_message(arturia.pad.STOP, not arturia.state.stopped)
+            table.insert(messages, message)
         end
+        -- reset beat and bar values
+        arturia.state.prevBeatValue = -1
+
+        message = arturia.pad.sysex_message(arturia.pad.TAP, false)
+        table.insert(messages, message)
+
+        message = arturia.pad.sysex_message(arturia.pad.TAP, false)
+        table.insert(messages, message)
     elseif controlID == kControlIDPlay then
         oldValue = arturia.state.playing
         arturia.state.playing = (currentValue == 1)
         if not oldValue or oldValue ~= arturia.state.playing then
-            message = arturia.pad.sysex_message(arturia.pad.PLAY, arturia.state.playing)
+            local message = arturia.pad.sysex_message(arturia.pad.PLAY, arturia.state.playing)
+            table.insert(messages, message)
         end
     elseif controlID == kControlIDArm then
-        message = arturia.pad.sysex_message(arturia.pad.REC, currentValue == 1)
+        local message = arturia.pad.sysex_message(arturia.pad.REC, currentValue == 1)
+        table.insert(messages, message)
     end
 
-    local midi_message = arturia.midi_message(message)
+    local midi_message = arturia.midi_message(table.unpack(messages))
     -- what does 'ret' mean?
     -- but apparently Track Info and Instr start providing proper values (instead of single letter or -1 pText)
     -- when ret is provided
@@ -443,27 +454,29 @@ function CSFeedbackText(controlID, pText, textLength, something)
     if controlID == kControlIDPlayhead and arturia.state.playing then
         -- assuming beats is always even it could be done % 2, but what if not
         local playhead = arturia.string.split(pText)
-        local bar = playhead[1]
-        local beat = playhead[2]
-        if not arturia.state.prevBeatValue or arturia.state.prevBeatValue ~= beat then
-            arturia.state.prevBeatValue = beat
-            arturia.state.prevBeatState = not arturia.state.prevBeatState
-            local message = arturia.pad.sysex_message(arturia.pad.PLAY, arturia.state.prevBeatState)
+        local beat = tonumber(playhead[2])
+        local division = tonumber(playhead[3])
+
+        -- pad is on for 1st beat and odd, off 2nd and even
+        local beatState = (beat % 2 ~= 0)
+
+        local message = arturia.pad.sysex_message(arturia.pad.STOP, (division % 2 ~= 0))
+        table.insert(messages, message)
+
+        -- send message only when beat has changed
+        if arturia.state.prevBeatValue ~= beat then
+            message = arturia.pad.sysex_message(arturia.pad.PLAY, beatState)
             table.insert(messages, message)
 
-            -- when beat changes, check for bar change
-            local barState = false
-            if not arturia.state.prevBarValue or arturia.state.prevBarValue ~= bar then
-                barState = true
-            end
-            arturia.state.prevBarValue = bar
-
-            if arturia.state.prevBarState ~= barState then
-                arturia.state.prevBarState = barState
-                message = arturia.pad.sysex_message(arturia.pad.TAP, barState)
+            -- turn on bar for 1st beat, - off bar for 2nd+ beat
+            -- send message only when pad state needs to be switched
+            local firstBeat = (beat == 1)
+            if firstBeat or (beat == 2) then
+                message = arturia.pad.sysex_message(arturia.pad.TAP, firstBeat)
                 table.insert(messages, message)
             end
         end
+        arturia.state.prevBeatValue = beat
     elseif controlID == kControlIDRecord then
         oldValue = arturia.state.recording
         arturia.state.recording = (pText == 'On')
