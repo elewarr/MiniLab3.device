@@ -1,4 +1,4 @@
--- Wed Jun 18 23:41:11 UTC 2025
+-- Fri Jun 20 19:27:51 UTC 2025
 --
 -- Unofficial Arturia Minilab3 configuration for Logic Pro.
 --
@@ -157,11 +157,13 @@ arturia.state = {
     stopped = nil,
 
     -- for display
-    midi_in_event_type = nil,
+    midiInEventType = nil,
 
     -- for pads
-    prev_beat_value = nil,
-    prev_beat_state = false
+    prevBarValue = nil,
+    prevBarState = false,
+    prevBeatValue = nil,
+    prevBeatState = false
 }
 
 TABLE_EMPTY = {}
@@ -355,19 +357,19 @@ function controller_midi_in(midiEvent, portName)
     if arturia.table.contains(arturia.ENCODER_HW_ID, midiEvent[1]) then
         arturia.display.page = arturia.page.ENCODER
         arturia.display.line2 = ''
-        arturia.state.midi_in_event_type = arturia.ENCODER_HW_ID
+        arturia.state.midiInEventType = arturia.ENCODER_HW_ID
     elseif arturia.table.contains(arturia.FADER_HW_ID, midiEvent[1]) then
         arturia.display.page = arturia.page.FADER
         arturia.display.line2 = ''
-        arturia.state.midi_in_event_type = arturia.FADER_HW_ID
+        arturia.state.midiInEventType = arturia.FADER_HW_ID
     elseif arturia.table.contains(arturia.TRANSPORT_HW_ID, midiEvent[1]) then
         arturia.display.page = arturia.page.PICTO
         arturia.display.line2 = ''
-        arturia.state.midi_in_event_type = arturia.TRANSPORT_HW_ID
+        arturia.state.midiInEventType = arturia.TRANSPORT_HW_ID
     else
         arturia.display.page = arturia.page.TWO_LINES
         arturia.display.line2 = ''
-        arturia.state.midi_in_event_type = nil
+        arturia.state.midiInEventType = nil
     end
 
     -- ignore button press, handle release (when last byte is 0x00)
@@ -436,41 +438,61 @@ function CSFeedbackText(controlID, pText, textLength, something)
         return MIDI_MESSAGE_EMPTY
     end
 
-    local message = {}
+    local messages = {}
 
     if controlID == kControlIDPlayhead and arturia.state.playing then
         -- assuming beats is always even it could be done % 2, but what if not
         local playhead = arturia.string.split(pText)
+        local bar = playhead[1]
         local beat = playhead[2]
-        if not arturia.state.prev_beat_value or arturia.state.prev_beat_value ~= beat then
-            arturia.state.prev_beat_value = beat
-            arturia.state.prev_beat_state = not arturia.state.prev_beat_state
-            message = arturia.pad.sysex_message(arturia.pad.PLAY, arturia.state.prev_beat_state)
+        if not arturia.state.prevBeatValue or arturia.state.prevBeatValue ~= beat then
+            arturia.state.prevBeatValue = beat
+            arturia.state.prevBeatState = not arturia.state.prevBeatState
+            local message = arturia.pad.sysex_message(arturia.pad.PLAY, arturia.state.prevBeatState)
+            table.insert(messages, message)
+
+            -- when beat changes, check for bar change
+            local barState = false
+            if not arturia.state.prevBarValue or arturia.state.prevBarValue ~= bar then
+                barState = true
+            end
+            arturia.state.prevBarValue = bar
+
+            if arturia.state.prevBarState ~= barState then
+                arturia.state.prevBarState = barState
+                message = arturia.pad.sysex_message(arturia.pad.TAP, barState)
+                table.insert(messages, message)
+            end
         end
-        arturia.state.prev_beat_value = beat
     elseif controlID == kControlIDRecord then
         oldValue = arturia.state.recording
         arturia.state.recording = (pText == 'On')
         if not oldValue or oldValue ~= arturia.state.recording then
             message = arturia.pad.sysex_message(arturia.pad.REC, arturia.state.recording)
+            table.insert(messages, message)
         end
     elseif controlID == kControlIDTrackInfo then
         arturia.display.trackInfo = pText
-        message = arturia.display.sysex_message(arturia.page.PICTO, arturia.display.trackInfo, arturia.display.line2)
+        local message = arturia.display.sysex_message(arturia.page.PICTO, arturia.display.trackInfo,
+            arturia.display.line2)
+        table.insert(messages, message)
     elseif controlID == kControlIDInst then
         arturia.display.instr = pText
-        message = arturia.display.sysex_message(arturia.page.PICTO, arturia.display.line1, arturia.display.instr)
-    elseif arturia.state.midi_in_event_type == arturia.ENCODER_HW_ID and
+        local message = arturia.display.sysex_message(arturia.page.PICTO, arturia.display.line1, arturia.display.instr)
+        table.insert(messages, message)
+    elseif arturia.state.midiInEventType == arturia.ENCODER_HW_ID and
         arturia.table.contains(kControlIDEncoders, controlID) then
         arturia.display.line2 = pText
-        message = arturia.display.sysex_message(arturia.page.ENCODER, arturia.display.line1, arturia.display.line2)
-    elseif arturia.state.midi_in_event_type == arturia.FADER_HW_ID and
+        local message = arturia.display.sysex_message(arturia.page.ENCODER, arturia.display.line1, arturia.display.line2)
+        table.insert(messages, message)
+    elseif arturia.state.midiInEventType == arturia.FADER_HW_ID and
         arturia.table.contains(kControlIDFaders, controlID) then
         arturia.display.line2 = pText
-        message = arturia.display.sysex_message(arturia.page.FADER, arturia.display.line1, arturia.display.line2)
+        local message = arturia.display.sysex_message(arturia.page.FADER, arturia.display.line1, arturia.display.line2)
+        table.insert(messages, message)
     end
 
-    return arturia.midi_message(message)
+    return arturia.midi_message(table.unpack(messages))
 end
 
 function CSLongFeedbackText(controlID, pText, textLength)
@@ -478,11 +500,11 @@ function CSLongFeedbackText(controlID, pText, textLength)
         return MIDI_MESSAGE_EMPTY
     end
 
-    if arturia.state.midi_in_event_type == arturia.ENCODER_HW_ID and
+    if arturia.state.midiInEventType == arturia.ENCODER_HW_ID and
         arturia.table.contains(kControlIDEncoders, controlID) then
         arturia.display.line2 = pText
         message = arturia.display.sysex_message(arturia.page.ENCODER, arturia.display.line1, arturia.display.line2)
-    elseif arturia.state.midi_in_event_type == arturia.FADER_HW_ID and
+    elseif arturia.state.midiInEventType == arturia.FADER_HW_ID and
         arturia.table.contains(kControlIDFaders, controlID) then
         arturia.display.line2 = pText
         message = arturia.display.sysex_message(arturia.page.FADER, arturia.display.line1, arturia.display.line2)
