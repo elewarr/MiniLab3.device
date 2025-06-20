@@ -1,4 +1,4 @@
--- Fri Jun 20 22:54:14 UTC 2025
+-- Fri Jun 20 23:41:31 UTC 2025
 --
 -- Unofficial Arturia Minilab3 configuration for Logic Pro.
 --
@@ -412,6 +412,9 @@ function CSFeedback(controlID, currentValue, minValue, maxValue, nSubSequentCont
         arturia.state.stopped = (currentValue == 1)
         local message = nil
         if not oldValue or oldValue ~= arturia.state.stopped then
+            message = arturia.display.sysex_message(arturia.page.PICTO, arturia.display.trackInfo,
+                arturia.display.instr)
+
             -- flip stopped flag for on/off
             message = arturia.pad.sysex_message(arturia.pad.STOP, not arturia.state.stopped)
             table.insert(messages, message)
@@ -421,14 +424,15 @@ function CSFeedback(controlID, currentValue, minValue, maxValue, nSubSequentCont
 
         message = arturia.pad.sysex_message(arturia.pad.TAP, false)
         table.insert(messages, message)
-
-        message = arturia.pad.sysex_message(arturia.pad.TAP, false)
-        table.insert(messages, message)
     elseif controlID == kControlIDPlay then
         oldValue = arturia.state.playing
         arturia.state.playing = (currentValue == 1)
         if not oldValue or oldValue ~= arturia.state.playing then
-            local message = arturia.pad.sysex_message(arturia.pad.PLAY, arturia.state.playing)
+            local message = arturia.display.sysex_message(arturia.page.PICTO, arturia.display.trackInfo,
+                arturia.display.instr)
+            table.insert(messages, message)
+
+            message = arturia.pad.sysex_message(arturia.pad.PLAY, arturia.state.playing)
             table.insert(messages, message)
         end
     elseif controlID == kControlIDArm then
@@ -454,6 +458,7 @@ function CSFeedbackText(controlID, pText, textLength, something)
     if controlID == kControlIDPlayhead and arturia.state.playing then
         -- assuming beats is always even it could be done % 2, but what if not
         local playhead = arturia.string.split(pText)
+        local bar = tonumber(playhead[1])
         local beat = tonumber(playhead[2])
         local division = tonumber(playhead[3])
 
