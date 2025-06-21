@@ -1,4 +1,4 @@
--- Fri Jun 20 23:41:31 UTC 2025
+-- Sat Jun 21 23:39:56 UTC 2025
 --
 -- Unofficial Arturia Minilab3 configuration for Logic Pro.
 --
@@ -11,7 +11,7 @@
 --
 
 arturia = {
-    CONFIG_VERSION = 11,
+    CONFIG_VERSION = 12,
 
     MIDI_PORT_IN = 'MIDI',
     MIDI_PORT_OUT = 'MIDI',
@@ -412,6 +412,13 @@ function CSFeedback(controlID, currentValue, minValue, maxValue, nSubSequentCont
         arturia.state.stopped = (currentValue == 1)
         local message = nil
         if not oldValue or oldValue ~= arturia.state.stopped then
+            if arturia.state.stopped then
+                message = arturia.pad.sysex_message(arturia.pad.TAP, false)
+                table.insert(messages, message)
+                message = arturia.pad.sysex_message(arturia.pad.PLAY, false)
+                table.insert(messages, message)
+            end
+
             message = arturia.display.sysex_message(arturia.page.PICTO, arturia.display.trackInfo,
                 arturia.display.instr)
 
@@ -421,9 +428,6 @@ function CSFeedback(controlID, currentValue, minValue, maxValue, nSubSequentCont
         end
         -- reset beat and bar values
         arturia.state.prevBeatValue = -1
-
-        message = arturia.pad.sysex_message(arturia.pad.TAP, false)
-        table.insert(messages, message)
     elseif controlID == kControlIDPlay then
         oldValue = arturia.state.playing
         arturia.state.playing = (currentValue == 1)
@@ -455,12 +459,14 @@ function CSFeedbackText(controlID, pText, textLength, something)
 
     local messages = {}
 
-    if controlID == kControlIDPlayhead and arturia.state.playing then
+    if controlID == kControlIDPlayhead and
+        arturia.state.playing and
+        not arturia.state.stopped then -- it can be both playing and stopped at some point
         -- assuming beats is always even it could be done % 2, but what if not
         local playhead = arturia.string.split(pText)
-        local bar = tonumber(playhead[1])
-        local beat = tonumber(playhead[2])
-        local division = tonumber(playhead[3])
+        local bar = tonumber(playhead[1]) or 1
+        local beat = tonumber(playhead[2]) or 1
+        local division = tonumber(playhead[3]) or 1
 
         -- pad is on for 1st beat and odd, off 2nd and even
         local beatState = (beat % 2 ~= 0)
@@ -546,7 +552,6 @@ end
 --=============================================================================
 
 function arturia.pad.sysex_message(pad, on)
-
     local pad_color = on and arturia.pad.COLORS_ON[pad] or arturia.pad.COLORS_OFF[pad]
     return arturia.table.concat(arturia.SYSEX_MESSAGE_PREFIX, arturia.pad.color(pad, pad_color),
         arturia.SYSEX_MESSAGE_SUFFIX)
